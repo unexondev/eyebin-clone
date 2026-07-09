@@ -1,0 +1,5 @@
+ultralytics
+roboflow
+segment-anything
+opencv-python
+matplotlib
