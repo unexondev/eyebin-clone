@@ -3,3 +3,4 @@ roboflow
 segment-anything
 opencv-python
 matplotlib
+pyrealsense2
