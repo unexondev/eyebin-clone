@@ -4,3 +4,4 @@ segment-anything
 opencv-python
 matplotlib
 pyrealsense2
+pybind11-stubgen

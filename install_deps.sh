@@ -13,6 +13,8 @@ sleep 10
 
 echo "[EyeBin] Installing dependencies..."
 sudo apt-get install -y \
+    python3 \
+    python3-dev \
     libusb-1.0-0-dev \
     libudev-dev \
     libssl-dev \
@@ -48,9 +50,16 @@ This generally doesn't cause issues, it can be ignored for this project."
 fi
 
 
+echo "[EyeBin] Creating virtual environment for Python..."
+[ -d .venv ] || python3 -m venv .venv
+source .venv/bin/activate # activate the virtual environment
+
+
 echo "[EyeBin] Building librealsense..."
 mkdir -p build && cd build
-cmake ../ -DBUILD_EXAMPLES=true
+cmake ../ -DBUILD_EXAMPLES=true -DBUILD_PYTHON_BINDINGS=true -DPYTHON_EXECUTABLE=$(which python3)
 (sudo make uninstall || true) && make clean && make -j$(($(nproc)-1)) && sudo make install
+
+deactivate # deactivate the virtual environment
 
 echo "[EyeBin] Installation is completed successfully."
