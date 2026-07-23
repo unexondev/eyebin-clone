@@ -1,5 +1,8 @@
 # This project is still on development
 
+## System Design
+<img width="1375" height="1209" alt="image" src="https://github.com/user-attachments/assets/7b983b1a-117a-45f9-8a18-ee769bdf0f98" />
+
 ## Status (latest - 21/07/2026)
 Developing the **core** concepts, so the capabilities are going to be running properly on a **simulated environment**.
 
