@@ -6,9 +6,16 @@ ASIC_TEMP_RECOMMENDED = 30.0 # FIXME SWAG
 PROJECT_TEMP_RECOMMENDED = 30.0 # FIXME SWAG
 
 
+def any_device_connected(ctx : rs.context):
+    return len(ctx.query_devices()) > 0
+
 def prepare_depth_sensors(ctx : rs.context):
 
     ss_queue = [ sensor for sensor in ctx.query_all_sensors() if sensor.is_depth_sensor() ]
+
+    if not ss_queue:
+        # no sensors detected
+        raise RuntimeError("No sensors detected, please ensure that the device is connected.")
 
     for sensor in ss_queue:
 
