@@ -62,7 +62,6 @@ ctx = rs.context()
 prepare_depth_sensors(ctx) # prepare the sensors
 
 pipeline = rs.pipeline()
-
 config = rs.config() # https://github.com/realsenseai/librealsense/blob/7c3ee3fb7c640e9f315e663907208cb56c4febfd/src/pipeline/config.h#L18
 config.enable_stream(
     stream_type=rs.stream.depth,
