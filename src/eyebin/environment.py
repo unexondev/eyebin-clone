@@ -1,4 +1,4 @@
-from pyrealsense2 import context, sensor, format, video_stream_profile
+from pyrealsense2 import context, sensor, video_stream_profile, option
 from dataclasses import dataclass
 
 from .core.mixins.optimization import OptimizationMixin
@@ -27,92 +27,141 @@ class EnvironmentOptions:
 
 class Environment(OptimizationMixin):
     """
-    For managing stereo module (depth sensors) and RGB camera components.
+    Manage all the devices required to receive data for given video stream profiles
     """
 
-    def __init__(self, context : context, options : EnvironmentOptions):
-        self.ctx = context # RealSense context
+    def __init__(self,
+                 profile_to_sensor : dict[StreamProfile, sensor],
+                 options : EnvironmentOptions
+                 ):
         self.opts = options
-        self.cp_stereo = None # Stereo module
-        self.cp_rgb = None # RGB module
+        self._prf_to_sensor = profile_to_sensor # profile to sensor map
 
 
-    @property
-    def stereo(self):
-        cp_stereo = self.cp_stereo
-        if cp_stereo is None:
-            raise RuntimeError("Stereo module (depth sensors) is not initialized.")
-        return cp_stereo
+    @classmethod
+    def create(cls, context : context, stream_profiles : set[StreamProfile], options : EnvironmentOptions):
 
+        prf_to_sensor = {}
 
-    @property
-    def rgb(self):
-        cp_rgb = self.cp_rgb
-        if cp_rgb is None:
-            raise RuntimeError("RGB camera is not initialized.")
-        return cp_rgb
-
-
-    def init_components(self):
-
-        ctx = self.ctx
-
-        sensors = ctx.query_all_sensors()
+        # map profiles with sensors
+        sensors = context.query_all_sensors()
+        prfs_not_found = stream_profiles.copy()
         for sensor in sensors:
 
-            if sensor.is_depth_sensor():
-                # then we can take it as stereo module
-                if self.cp_stereo is not None:
-                    raise NotImplementedError("Selection from multiple depth sensors is not implemented for now.")
+            stream_prfs_sensor = sensor.get_stream_profiles()
+            for profile_sensor in stream_prfs_sensor:
 
-                self.cp_stereo = sensor
+                if not prfs_not_found: break
 
-            elif sensor.is_color_sensor():
-                if self.cp_rgb is not None:
-                    raise NotImplementedError("Selection from multiple color sensors is not implemented for now.")
+                for profile in prfs_not_found:
 
-                self.cp_rgb = sensor
+                    if not profile_sensor.is_video_stream_profile():
+                        continue
 
-        if self.stereo is None or self.cp_rgb is None:
-            raise RuntimeError("Missing component, both stereo module & RGB camera are required.")
+                    profile_sensor : video_stream_profile \
+                        = profile_sensor.as_video_stream_profile()
 
+                    if profile_sensor.stream_type() == profile.stream_type and \
+                        profile_sensor.width() == profile.width and \
+                        profile_sensor.height() == profile.height and \
+                        profile_sensor.fps() == profile.fps:
 
-    """
-    Helper functions while interacting with components
-    """
-    @staticmethod
-    def is_component_opened(component : sensor):
-        return len(component.get_active_streams()) > 0
+                        prf_to_sensor[profile] = sensor
 
-    @staticmethod
-    def stream_profiles_supported(component : sensor, stream_profiles : set[StreamProfile]):
+                        prfs_not_found.remove(profile)
 
-        for prf_check in stream_profiles:
+                        break
 
-            for prf in component.get_stream_profiles():
-
-                if not prf.is_video_stream_profile():
-                    continue
-
-                vs_prf : video_stream_profile = prf.as_video_stream_profile()
-
-                if (prf_check.width == vs_prf.width() 
-                    and prf_check.height == vs_prf.height() 
-                    and vs_prf.fps() == prf_check.frame_rate):
-                    # same profile in supported profiles
-                    break
             else:
-                return False # one of the profiles is not supported
+                continue
+
+            break
+
+        else:
+            raise RuntimeError("Some of the stream profiles are not supported")
+
+        return cls(
+            profile_to_sensor=prf_to_sensor,
+            options=options
+            )
+
+
+    def check_health(self):
+
+        for sensor in self.sensors():
+
+            if not self.is_sensor_streaming(sensor):
+                continue # sensor must be streaming to check its health
+
+            if sensor.is_depth_sensor():
+                """
+                - Asic temperature
+                - Projector temperature
+                """
+                opts_sensor = sensor.get_supported_options()
+                if option.asic_temperature in opts_sensor:
+                    asic_temp = sensor.get_option(option.asic_temperature)
+                    asic_temp_max = self.opts.asic_temp_range_stereo[1]
+
+                    if asic_temp > asic_temp_max:
+                        return False
+
+                if option.projector_temperature in opts_sensor:
+                    projector_temp = sensor.get_option(option.projector_temperature)
+                    projector_temp_max = self.opts.projector_temp_range_stereo[1]
+
+                    if projector_temp > projector_temp_max:
+                        return False
+
+        # TODO add health checks for other type of sensors?
 
         return True
 
+
+    def stream_profiles(self):
+        for prf in self._prf_to_sensor.keys():
+            prf : StreamProfile
+            yield prf
+
+
+    def sensors(self):
+        for _sensor in set(self._prf_to_sensor.values()):
+            _sensor : sensor
+            yield _sensor
+
+
+    def get_sensor(self, stream_profile : StreamProfile) -> sensor:
+        return self._prf_to_sensor[stream_profile]
+
+
+    """
+    Helper functions while interacting with sensors
+    """
     @staticmethod
-    def stop_component(component : sensor):
+    def is_sensor_opened(sensor : sensor):
+        return len(sensor.get_active_streams()) > 0
+
+
+    @staticmethod
+    def is_sensor_streaming(sensor : sensor):
+        if not Environment.is_sensor_opened(sensor):
+            return False
+        try:
+            sensor.start()
+        except RuntimeError:
+            # sensor is already started
+            return True
+        sensor.stop()
+        return False
+    
+        
+    @staticmethod
+    def stop_sensor(sensor : sensor):
         """
-        Stops the component. Returns `True` if component was running before it stopped, `False` otherwise.
+        Stops the sensor. Returns `True` if sensor was running before it stopped, `False` otherwise.
         """
         try: 
-            component.stop()
+            sensor.stop()
         except RuntimeError:
             return False
         return True
