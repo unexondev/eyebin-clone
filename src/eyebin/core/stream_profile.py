@@ -14,3 +14,8 @@ class VideoStreamProfile(StreamProfile):
     width : int
     height : int
     fps : int
+    def __hash__(self):
+        return hash((
+            self.width, self.height, self.fps,
+            self.stream_type, self.format
+            ))

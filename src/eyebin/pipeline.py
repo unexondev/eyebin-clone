@@ -2,15 +2,20 @@ from dataclasses import dataclass
 from .environment import Environment, EnvironmentOptions
 import pyrealsense2 as rs
 
+import logging
+from rich.logging import RichHandler
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(message)s",
+    handlers=[RichHandler()]
+)
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class PipelineOptions:
-
-    optimized_startup : bool
-    """
-    If this option set to `True`, stereo module (depth sensors) is going to be heaten
-    before running workers and so on.
-    """
 
     max_len_captured_data_buffer : int
     """
