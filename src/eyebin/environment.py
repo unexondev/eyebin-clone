@@ -2,10 +2,18 @@ from pyrealsense2 import context, option, syncer
 from pyrealsense2 import sensor as rs_sensor
 from pyrealsense2 import stream_profile as rs_stream_profile
 from pyrealsense2 import video_stream_profile as rs_video_stream_profile
-from dataclasses import dataclass
 
 from .core.mixins.optimization import OptimizationMixin
 from .core.stream_profile import StreamProfile
+
+from dataclasses import dataclass
+from enum import Enum
+
+from threading import Lock # for thread-safe
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,6 +42,14 @@ class EnvironmentOptions:
     """
 
 
+class SensorState(Enum):
+    CLOSED = 0,
+    OPTIMIZING = 1,
+    OPENED = 2,
+    STARTED = 3,
+    ERRORED = 4
+
+
 class Environment(OptimizationMixin):
     """
     Manage all the devices required to receive data for given video stream profiles
@@ -49,16 +65,19 @@ class Environment(OptimizationMixin):
             ))
 
     def __init__(self,
-                 profile_to_sensor : dict[StreamProfile, SensorContext],
+                 profile_to_sensor_ctx : dict[StreamProfile, SensorContext],
                  options : EnvironmentOptions
                  ):
+        self._prf_to_sensor_ctx = profile_to_sensor_ctx # profile to sensor map
+        self._sensor_states = {
+            ctx_sensor.sensor: SensorState.CLOSED
+                for ctx_sensor in profile_to_sensor_ctx.values()
+            } # sensor to its state map
         self.opts = options
-        self._prf_to_sensor_ctx = profile_to_sensor # profile to sensor map
-
+        self._lock = Lock() # for thread-safe read/writes to sensor states etc.
 
     @classmethod
     def create(cls, context : context, stream_profiles : set[StreamProfile], options : EnvironmentOptions):
-
         prf_to_sensor_ctx = {}
 
         # map profiles with sensors
@@ -99,31 +118,27 @@ class Environment(OptimizationMixin):
             raise RuntimeError("Some of the stream profiles are not supported")
 
         return cls(
-            profile_to_sensor=prf_to_sensor_ctx,
+            profile_to_sensor_ctx=prf_to_sensor_ctx,
             options=options
             )
 
-
     @staticmethod
-    def _is_sensor_opened(sensor : rs_sensor):
+    def _is_sensor_opened_internal(sensor : rs_sensor):
         return len(sensor.get_active_streams()) > 0
-
-
-    @staticmethod
-    def _is_sensor_started(sensor : rs_sensor):
-        if not Environment._is_sensor_opened(sensor):
-            return False
-        try:
-            sensor.start(lambda _ : None)
-        except RuntimeError:
-            # sensor is already started
-            return True
-        sensor.stop()
-        return False
 
 
     def _get_rs_stream_profile(self, stream_profile : StreamProfile):
         return self._prf_to_sensor_ctx[stream_profile].profile
+
+
+    def _get_sensor_state(self, sensor : rs_sensor):
+        with self._lock:
+            return self._sensor_states[sensor]
+
+
+    def _set_sensor_state(self, sensor : rs_sensor, state : SensorState):
+        with self._lock:
+            self._sensor_states[sensor] = state
 
 
     """
@@ -147,14 +162,14 @@ class Environment(OptimizationMixin):
 
     def is_streaming(self, stream_profile : StreamProfile):
         sensor = self.get_sensor(stream_profile)
-        return self._is_sensor_started(sensor)
+        return self._get_sensor_state(sensor) == SensorState.STARTED
 
 
     def check_health(self):
 
         for sensor in self.sensors():
 
-            if not self._is_sensor_started(sensor):
+            if self._get_sensor_state(sensor) != SensorState.STARTED:
                 continue # sensor must be streaming to check its health
 
             if sensor.is_depth_sensor():
@@ -188,33 +203,62 @@ class Environment(OptimizationMixin):
         Returns `True` if sensor is started successfully, `False` otherwise.
         """
         sensor = self.get_sensor(stream_profile)
+        rs_prf_stream = self._get_rs_stream_profile(stream_profile)
+
+        logger.debug("Attempting to start sensor %X "
+                     "with syncer %s..." %
+                     (id(sensor), "%X" % id(syncer) if syncer is not None else "`None`"))
 
         if self.opts.optimized_startup:
-            self.apply_optimizations(sensor) # apply optimizations to the sensor
-
-        # check if already opened
-        if not self._is_sensor_opened(sensor):
-            # try to open with given profile
+            self._set_sensor_state(
+                sensor, SensorState.OPTIMIZING
+                ) # set sensor state being optimized
             try:
-                sensor.open(
-                    self._get_rs_stream_profile(stream_profile)
+                self.apply_optimizations(sensor) # apply optimizations to the sensor
+                self._set_sensor_state(
+                    sensor, SensorState.CLOSED
                     )
             except RuntimeError:
+                self._set_sensor_state(
+                    sensor, SensorState.ERRORED
+                    )
+
+        if self._is_sensor_opened_internal(sensor):
+            if rs_prf_stream not in sensor.get_active_streams():
+                # sensor is already opened with another stream profile
+                logger.error("Sensor %X has already been opened "
+                             "with different stream profile." % id(sensor))
+                self._set_sensor_state(sensor, SensorState.ERRORED)
+                return False
+            pass # sensor is opened with given stream profile, go to starting process
+
+        else: # sensor is not opened
+            # try to open with given profile
+            try:
+                sensor.open(rs_prf_stream)
+                self._set_sensor_state(sensor, SensorState.OPENED)
+            except RuntimeError:
                 # couldn't open
+                logger.error("Couldn't open sensor %X. (internal error)" % id(sensor))
+                self._set_sensor_state(sensor, SensorState.ERRORED)
                 return False
 
-        # check if already started
-        if self._is_sensor_started(sensor):
-            return True
+        # starting process
 
-        # try to start
-        try:
-            sensor.start(syncer)
-        except RuntimeError:
-            # couldn't start
-            return False
+        # check if already stopped
+        if self._get_sensor_state(sensor) != SensorState.STARTED:
+            # try to start
+            try:
+                sensor.start(syncer)
+                self._set_sensor_state(sensor, SensorState.STARTED)
+            except RuntimeError:
+                # couldn't start
+                logger.error("Couldn't start sensor %X. (internal error)" % id(sensor))
+                self._set_sensor_state(sensor, SensorState.ERRORED)
+                return False
 
         # started successfully
+        logger.info("Sensor %X has been started successfully." % id(sensor))
         return True
     
         
@@ -226,10 +270,15 @@ class Environment(OptimizationMixin):
             stream_profile: A `StreamProfile` instance indicating which sensor to be stopped.
         """
         sensor = self.get_sensor(stream_profile)
+
+        if self._get_sensor_state(sensor) != SensorState.STARTED:
+            return # nothing to do if not started
+
         try: 
             sensor.stop()
+            self._set_sensor_state(sensor, SensorState.OPENED)
         except RuntimeError:
-            pass
+            self._set_sensor_state(sensor, SensorState.ERRORED)
 
 
     def start_all(self, syncer : syncer = None):
