@@ -64,45 +64,38 @@ prepare_depth_sensors(ctx) # prepare the sensors
 pipeline = rs.pipeline()
 config = rs.config() # https://github.com/realsenseai/librealsense/blob/7c3ee3fb7c640e9f315e663907208cb56c4febfd/src/pipeline/config.h#L18
 config.enable_stream(
+    stream_type=rs.stream.color,
+    width=1280, height=720,
+    format=rs.format.rgba8,
+    framerate=30
+    )
+config.enable_stream(
     stream_type=rs.stream.depth,
-    width=640, height=480,
+    width=1280, height=720,
     format=rs.format.z16,
-    framerate=30)
+    framerate=30
+    )
 
 pipeline.start(config)
 
-def main(stdscr : curses.window):
-    while True:
+import cv2
+import numpy
 
-        frames = pipeline.wait_for_frames(
-            timeout_ms=5000
-            ) # 5 seconds for timeout
+while True:
 
-        depth = frames.get_depth_frame()
+    succ, fset = pipeline.try_wait_for_frames(
+        timeout_ms=500
+        ) # 5 seconds for timeout
 
-        h_csl, w_csl = stdscr.getmaxyx()
-        w_depth, h_depth = depth.width, depth.height
+    if not succ:
+        continue
 
-        stdscr.clear() # clear screen
+    fcolor = fset.get_color_frame()
 
-        CELL_WIDTH = 6
-        for y_csl in range(h_csl):
-            for x_csl in range(w_csl // CELL_WIDTH):
+    img = numpy.asanyarray(fcolor.get_data())
+    # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-                x_depth = int(x_csl * w_depth / w_csl)
-                y_depth = int(y_csl * h_depth / h_csl)
+    cv2.imshow("COLOR", img)
 
-                distance = depth.get_distance(x_depth, y_depth)
-
-                stdscr.addstr(
-                    y_csl,
-                    x_csl * CELL_WIDTH,
-                    f"{distance:5.2f}"
-                )
-
-        stdscr.refresh() # refresh console so changes will be applied
-
-        import time
-        time.sleep(0.1)
-
-curses.wrapper(main)
+    if cv2.waitKey(1) == 27:   # ESC
+        break

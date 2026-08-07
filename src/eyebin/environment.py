@@ -200,7 +200,9 @@ class Environment(OptimizationMixin):
     def start_stream(self, stream_profile : StreamProfile, syncer : syncer = None):
         """
         Begins streaming by starting the sensor.
-        Returns `True` if sensor is started successfully, `False` otherwise.
+
+        Args:
+            stream_profile: A StreamProfile instance indicates which stream to be started.
         """
         sensor = self.get_sensor(stream_profile)
         rs_prf_stream = self._get_rs_stream_profile(stream_profile)
@@ -229,7 +231,7 @@ class Environment(OptimizationMixin):
                 logger.error("Sensor %X has already been opened "
                              "with different stream profile." % id(sensor))
                 self._set_sensor_state(sensor, SensorState.ERRORED)
-                return False
+                raise
             pass # sensor is opened with given stream profile, go to starting process
 
         else: # sensor is not opened
@@ -241,7 +243,7 @@ class Environment(OptimizationMixin):
                 # couldn't open
                 logger.error("Couldn't open sensor %X. (internal error)" % id(sensor))
                 self._set_sensor_state(sensor, SensorState.ERRORED)
-                return False
+                raise
 
         # starting process
 
@@ -255,11 +257,10 @@ class Environment(OptimizationMixin):
                 # couldn't start
                 logger.error("Couldn't start sensor %X. (internal error)" % id(sensor))
                 self._set_sensor_state(sensor, SensorState.ERRORED)
-                return False
+                raise
 
         # started successfully
         logger.info("Sensor %X has been started successfully." % id(sensor))
-        return True
     
         
     def stop_stream(self, stream_profile : StreamProfile):
@@ -271,6 +272,8 @@ class Environment(OptimizationMixin):
         """
         sensor = self.get_sensor(stream_profile)
 
+        logger.debug("Attempting to stop sensor %X..." % id(sensor))
+
         if self._get_sensor_state(sensor) != SensorState.STARTED:
             return # nothing to do if not started
 
@@ -278,7 +281,13 @@ class Environment(OptimizationMixin):
             sensor.stop()
             self._set_sensor_state(sensor, SensorState.OPENED)
         except RuntimeError:
+            # couldn't stop
+            logger.error("Couldn't stop sensor %X. (internal error)" % id(sensor))
             self._set_sensor_state(sensor, SensorState.ERRORED)
+            raise
+
+        # stopped successfully
+        logger.info("Sensor %X has been stopped successfully." % id(sensor))
 
 
     def start_all(self, syncer : syncer = None):
@@ -287,28 +296,23 @@ class Environment(OptimizationMixin):
 
         Args:
             syncer: A `pyrealsense2.syncer` instance to synchronize frames.
-
-        Returns:
-            `True` if all the streams have been started successfully, `False` otherwise.
         """
         for prf in self.stream_profiles():
 
-            if not self.start_stream(prf, syncer):
+            try:
+                self.start_stream(prf, syncer)
+
+            except RuntimeError:
 
                 self.stop_all() # stop all if some of them couldn't be started
 
-                return False
-
-        # all streams have been started
-        return True
+                raise
 
 
     def stop_all(self):
         """
         Ends all the streams by stopping related sensors.
         """
-        for sensor in self.sensors():
-            try:
-                sensor.stop()
-            except RuntimeError:
-                continue
+        for prf in self.stream_profiles():
+
+            self.stop_stream(prf) 
