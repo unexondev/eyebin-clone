@@ -12,7 +12,16 @@ Developing the **core** concepts, so the capabilities are going to be running pr
 
 <br>
 
-### Suggestions
+### Installation
+1) Clone this repository using command:
+    > git clone --recurse-submodules https://github.com/unexondev/eyebin-clone.git
+
+2) Navigate to the EyeBin project root directory:
+    > cd eyebin-clone
+
+3) Run installation script by using command:
+    > ./install_deps.sh
+
 _To enable **type hinting**, please execute the following command_:
 > pybind11-stubgen pyrealsense2 -o typings
 
