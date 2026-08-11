@@ -10,7 +10,20 @@ from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
-CHECKPOINT = "checkpoints/sam2.1_hiera_large.pt"
+"""
+For checkpoint file directories
+"""
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
+DATASET_DIR = PROJECT_ROOT / "datasets"
+"""
+---------------------------------
+"""
+
+CHECKPOINT = "checkpoints/sam2.1_hiera_tiny.pt"
 CONFIG = "configs/sam2.1/sam2.1_hiera_l.yaml"
 
 image = cv2.imread("image.jpg")
