@@ -56,7 +56,6 @@ cd ../../../ # navigate back to the project root
 echo "[EyeBin] Building SAM2..."
 cd third_party/sam2/ # current dir: <PROJECTROOT>/third_party/sam2
 pip install -e .
-cp -r sam2/configs/ ../../../ # copy configs
 cd ../../checkpoints # current dir: <PROJECTROOT>/checkpoints
 ./../third_party/sam2/checkpoints/download_ckpts.sh # install checkpoints
 cd ../ # navigate back to the project root
