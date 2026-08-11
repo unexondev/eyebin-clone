@@ -79,6 +79,12 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# SAM2 checkpoints
+checkpoints/
+
+# SAM2 configs
+configs/
+
 # IPython
 profile_default/
 ipython_config.py
