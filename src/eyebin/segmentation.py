@@ -1,4 +1,5 @@
 import torch
+from sam2.build_sam import build_sam2
 
 
 def get_sam2_model(pt_path):
