@@ -8,7 +8,7 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 import pathlib
 
 path = pathlib.Path(__file__)
-dir_prj = path.parents[2]
+dir_prj = path.parents[3]
 dir_ckpts = dir_prj.joinpath("checkpoints/")
 dir_cfgs = dir_prj.joinpath("configs/")
 
@@ -62,7 +62,7 @@ class MaskFactory:
                 exclude_points : PointCoords,
                 previous_mask : NDArray = None,
                 **predict_options
-                ):
+                ) -> NDArray:
         """
         Produces a segmentation mask using given image data.
 
@@ -115,9 +115,60 @@ class MaskFactory:
 """
 TEST
 """
-seng = MaskFactory.create(
+from PIL import Image
+import cv2
+
+maskfactory = MaskFactory.create(
     ckpt_name_or_path="sam2.1_hiera_tiny.pt",
     cfg_path="configs/sam2.1/sam2.1_hiera_t.yaml"
     )
 
-print(seng.model)
+include_coords : PointCoords = []
+exclude_coords : PointCoords = []
+mask_cur : NDArray | None = None
+
+def callback(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        include_coords.append((x, y))
+        
+    elif event == cv2.EVENT_RBUTTONDOWN:
+        exclude_coords.append((x, y))
+
+    
+
+fimage = Image.open("/home/cbsahmet/Dev/eyebin-clone/datasets/IMG-20260505-WA0137_jpg.rf.84f2adf308c8dcd6a4b37783cfaac18d.jpg")
+
+cv2.namedWindow("TEST-MASKFACTORY")
+cv2.setMouseCallback("TEST-MASKFACTORY", callback)
+
+while True:
+
+    image = np.array(fimage)
+
+    view = image
+    if mask_cur is not None:
+        # Maskeyi görüntüye uygula
+        overlay = image.copy()
+        overlay[mask_cur] = (0, 255, 0)
+        view = cv2.addWeighted(
+            image,
+            0.6,
+            overlay,
+            0.4,
+            0
+        )
+    cv2.imshow("TEST-MASKFACTORY", view)
+    
+    key = cv2.waitKey(500)
+
+    if key == 27: # ESC
+        # quit program
+        break
+
+    if key == 13: # Enter
+        # perform a prediction
+        mask_cur = maskfactory.produce(image, include_coords, exclude_coords)
+        print(mask_cur.dtype)
+        # then clear previous points
+        include_coords.clear()
+        exclude_coords.clear()
