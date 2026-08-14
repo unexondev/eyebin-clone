@@ -30,6 +30,11 @@ sudo apt-get install -y \
     libglu1-mesa-dev \
     v4l-utils # undocumented but required
 
+echo "[EyeBin] Installing Node.js (version: 24)..."
+sudo apt-get install -y curl
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
 echo "[EyeBin] Creating virtual environment for Python..."
 [ -d .venv ] || python3 -m venv .venv
 source .venv/bin/activate # activate the virtual environment
