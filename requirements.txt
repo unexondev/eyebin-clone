@@ -7,3 +7,4 @@ pyrealsense2
 pybind11-stubgen
 rich
 logging
+numpy
