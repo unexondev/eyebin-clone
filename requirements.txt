@@ -8,3 +8,4 @@ pybind11-stubgen
 rich
 logging
 numpy
+pyusb
